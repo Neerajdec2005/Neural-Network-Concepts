@@ -19,12 +19,23 @@ class ReLU_Activation:
     def forward(self, inputs):
         self.output= np.maximum(0, inputs)
 
-layer= Layer_Dense(2, 5)
+class Softmax_Activation:
+    def forward(self, inputs):
+        exp_values= np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
+        normalize= exp_values/ np.sum(exp_values, axis=1, keepdims=True)
+        self.output= normalize
+
+dense1= Layer_Dense(2, 5)
 activation= ReLU_Activation()
 
+dense2= Layer_Dense(5, 3)
+activation2= Softmax_Activation()
 
-layer.forward(X)
-activation.forward(layer.output)
+dense1.forward(X)
+activation.forward(dense1.output)
 
-print(activation.output)
+dense2.forward(activation.output)
+activation2.forward(dense2.output)
+
+print(activation2.output[:5])
 
