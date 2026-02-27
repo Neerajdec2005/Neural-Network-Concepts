@@ -39,6 +39,18 @@ class Layer_Dense:
 
         self.dinputs= np.dot(dvalues, self.weights.T)
 
+class Layer_Dropout:
+    def __init__(self, rate):
+        self.rate= 1- rate
+
+    def forward(self, inputs):
+        self.inputs= inputs
+        self.binary_mask= np.random.binomial(1, self.rate, size= inputs.shape)/ self.rate
+        self.output= inputs* self.binary_mask
+
+    def backward(self, dvalues):
+        self.dinputs= dvalues* self.binary_mask
+
 class Activation_ReLU:
     def forward(self, inputs):
         self.inputs= inputs
@@ -163,19 +175,21 @@ class Optimizer_Adam:
         self.iterations+= 1
 
 
-X, y= spiral_data(samples=1000, classes=3)
+X, y= spiral_data(samples=100, classes=3)
 
 # Forward Pass
-dense1= Layer_Dense(2,256, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)
+dense1= Layer_Dense(2,512, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)
 activation1= Activation_ReLU()
-dense2= Layer_Dense(256,3)
+dropout1= Layer_Dropout(0.1)
+dense2= Layer_Dense(512,3)
 loss_activation= Activation_Softmax_Loss_CategoricalCrossentropy()
-optimizers= Optimizer_Adam(learning_rate=0.02,decay=5e-7)
+optimizers= Optimizer_Adam(learning_rate=0.05,decay=5e-5)
 
 for epoch in range(10001):
     dense1.forward(X)
     activation1.forward(dense1.output)
-    dense2.forward(activation1.output)
+    dropout1.forward(activation1.output)
+    dense2.forward(dropout1.output)
     loss= loss_activation.forward(dense2.output, y) 
 
     regularization_loss= loss_activation.regularization_loss(dense1)+ loss_activation.regularization_loss(dense2)
@@ -191,7 +205,8 @@ for epoch in range(10001):
     # Backward pass
     loss_activation.backward(loss_activation.output, y)
     dense2.backward(loss_activation.dinputs)
-    activation1.backward(dense2.dinputs)
+    dropout1.backward(dense2.dinputs)
+    activation1.backward(dropout1.dinputs)
     dense1.backward(activation1.dinputs)
 
     optimizers.pre_update_params()
