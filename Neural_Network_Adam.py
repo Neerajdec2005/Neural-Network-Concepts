@@ -5,9 +5,16 @@ from nnfs.datasets import spiral_data
 nnfs.init()
 
 class Layer_Dense:
-    def __init__(self, n_inputs, n_neurons):
+    def __init__(self, n_inputs, n_neurons,
+                 weight_regularizer_l1=0.0, weight_regularizer_l2=0.0,
+                 bias_regularizer_l1=0.0, bias_regularizer_l2=0.0):
         self.weights= 0.10 * np.random.randn(n_inputs, n_neurons)
         self.biases= np.zeros((1, n_neurons))
+
+        self.weight_regularizer_l1= weight_regularizer_l1
+        self.weight_regularizer_l2= weight_regularizer_l2
+        self.bias_regularizer_l1= bias_regularizer_l1
+        self.bias_regularizer_l2= bias_regularizer_l2
 
     def forward(self, inputs):
         self.inputs= inputs
@@ -16,6 +23,20 @@ class Layer_Dense:
     def backward(self, dvalues):
         self.dweights= np.dot(self.inputs.T, dvalues)
         self.dbiases= np.sum(dvalues, axis=0, keepdims=True)
+
+        if self.weight_regularizer_l1>0:
+            dL1= np.ones_like(self.weights)
+            dL1[self.weights<0]= -1
+            self.dweights+= self.weight_regularizer_l1* dL1
+        if self.weight_regularizer_l2>0:
+            self.dweights+= 2* self.weight_regularizer_l2* self.weights
+        if self.bias_regularizer_l1>0:
+            dL1= np.ones_like(self.biases)
+            dL1[self.biases<0]= -1
+            self.dbiases+= self.bias_regularizer_l1* dL1
+        if self.bias_regularizer_l2>0:
+            self.dbiases+= 2* self.bias_regularizer_l2* self.biases
+
         self.dinputs= np.dot(dvalues, self.weights.T)
 
 class Activation_ReLU:
@@ -88,6 +109,20 @@ class Activation_Softmax_Loss_CategoricalCrossentropy:
         self.dinputs= dvalues.copy()
         self.dinputs[range(samples), y_true]-= 1
         self.dinputs= self.dinputs/samples
+    
+    def regularization_loss(self, layer):
+        regularization_loss= 0
+
+        if layer.weight_regularizer_l1>0:
+            regularization_loss+= layer.weight_regularizer_l1* np.sum(np.abs(layer.weights))
+        if layer.weight_regularizer_l2>0:
+            regularization_loss+= layer.weight_regularizer_l2* np.sum(layer.weights*layer.weights)
+        if layer.bias_regularizer_l1>0:
+            regularization_loss+= layer.bias_regularizer_l1* np.sum(np.abs(layer.biases))
+        if layer.bias_regularizer_l2>0:
+            regularization_loss+= layer.bias_regularizer_l2* np.sum(layer.biases*layer.biases)
+
+        return regularization_loss
 
 class Optimizer_Adam:
     def __init__(self, learning_rate=0.001, decay=0.0, eps=1e-7, beta1=0.9, beta2=0.999):
@@ -128,20 +163,23 @@ class Optimizer_Adam:
         self.iterations+= 1
 
 
-X, y= spiral_data(samples=100, classes=3)
+X, y= spiral_data(samples=1000, classes=3)
 
 # Forward Pass
-dense1= Layer_Dense(2,64)
+dense1= Layer_Dense(2,256, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)
 activation1= Activation_ReLU()
-dense2= Layer_Dense(64,3)
+dense2= Layer_Dense(256,3)
 loss_activation= Activation_Softmax_Loss_CategoricalCrossentropy()
-optimizers= Optimizer_Adam(learning_rate=0.02,decay=1e-5)
+optimizers= Optimizer_Adam(learning_rate=0.02,decay=5e-7)
 
 for epoch in range(10001):
     dense1.forward(X)
     activation1.forward(dense1.output)
     dense2.forward(activation1.output)
-    loss= loss_activation.forward(dense2.output, y)
+    loss= loss_activation.forward(dense2.output, y) 
+
+    regularization_loss= loss_activation.regularization_loss(dense1)+ loss_activation.regularization_loss(dense2)
+    loss+= regularization_loss
 
     predictions= np.argmax(loss_activation.output, axis=1)
     if len(y.shape)==2:
@@ -160,3 +198,16 @@ for epoch in range(10001):
     optimizers.update_params(dense1)
     optimizers.update_params(dense2)
     optimizers.post_update_params()
+
+
+X_test, y_test = spiral_data(samples=100, classes=3)
+
+dense1.forward(X_test)
+activation1.forward(dense1.output)
+dense2.forward(activation1.output)
+loss = loss_activation.forward(dense2.output, y_test)
+predictions = np.argmax(loss_activation.output, axis=1)
+if len(y_test.shape) == 2:
+    y_test = np.argmax(y_test, axis=1)
+accuracy = np.mean(predictions == y_test)
+print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
